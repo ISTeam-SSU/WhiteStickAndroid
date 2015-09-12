@@ -6,14 +6,10 @@ import net.htmlparser.jericho.Element;
 import net.htmlparser.jericho.HTMLElementName;
 import net.htmlparser.jericho.Source;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
+
+import util.HttpRequest;
 
 /**
  * 길찾기 중간경로를 가져오는 도우미 클래스
@@ -36,41 +32,98 @@ public class PathRequester
 	 * 길찾기를 수행하는 메서드
 	 * @param start    출발지 이름
 	 * @param end      도착지 이름
+	 * @param method   대중교통인지 도보인지
 	 * @param listener 중간 경로를 전달받기 위한 리스너
 	 */
-	public static void request(final String start, final String end, final PathReceivedListener listener)
+	public static void request(final String start, final String end, final String method, final PathReceivedListener listener)
 	{
 		new AsyncTask<Void, Void, ArrayList<Movement>>()
 		{
 			@Override
 			protected ArrayList<Movement> doInBackground(Void... voids)
 			{
-				StringBuffer result = httpRequest("http://m.map.daum.net/actions/walkRoute?startLoc=" + start + "&sxEnc=LVNSRL&syEnc=QNOMOMV&endLoc=" + end + "&exEnc=LVONUO&eyEnc=QNLNSRS&ids=P11124718%2CP10955757&service=", "GET");
-				Source source = new Source(result);
-				Element root = source.getElementById("daumContent").getFirstElementByClass("list_content_wrap").getFirstElementByClass("list_section list_walk");
-				List<Element> elements = root.getAllElements(HTMLElementName.LI);
+				String startHash = HashPath.hash(start);
+				String endHash = HashPath.hash(end);
 
-				ArrayList<Movement> movements = new ArrayList<Movement>();
+				if (startHash == null || endHash == null)
+					return null;
 
-				for (Element i : elements)
+				String[] startCoor = startHash.split("/");
+				String[] endCoor = endHash.split("/");
+
+				ArrayList<Movement> movements = new ArrayList<>();
+				if (method.equals("walk"))
 				{
-					double x = Double.parseDouble(i.getAttributeValue("data-x"));
-					double y = Double.parseDouble(i.getAttributeValue("data-y"));
+					StringBuffer result = HttpRequest.request("http://m.map.daum.net/actions/walkRoute?sxEnc=" + startCoor[0] + "&syEnc=" + startCoor[1] +
+							"&exEnc=" + endCoor[0] + "&eyEnc=" + endCoor[1] + "&service=", "GET");
+					Source source = new Source(result);
+					Element root = source.getFirstElementByClass("list_section list_walk");
+					List<Element> elements = root.getAllElements(HTMLElementName.LI);
 
-					Element contents = i.getFirstElementByClass("link_section");
-					Element descElement = contents.getFirstElementByClass("txt_section");
-
-					// 이동 방법에 대한 정보가 없으면
-					int flag = 1;
-					if (descElement == null)
+					for (Element i : elements)
 					{
-						descElement = contents.getFirstElementByClass("txt_point");
-						flag = 0;
-					}
+						double x = Double.parseDouble(i.getAttributeValue("data-x"));
+						double y = Double.parseDouble(i.getAttributeValue("data-y"));
 
-					String description = descElement.getTextExtractor().toString();
-					String direction = contents.getAllElementsByClass("ico_path").get(flag).getTextExtractor().toString();
-					movements.add(new Movement(x, y, description, direction));
+						Element contents = i.getFirstElementByClass("link_section");
+						Element descElement = contents.getFirstElementByClass("txt_section");
+
+						// 이동 방법에 대한 정보가 없으면
+						int flag = 1;
+						if (descElement == null)
+						{
+							descElement = contents.getFirstElementByClass("txt_point");
+							flag = 0;
+						}
+
+						String description = descElement.getTextExtractor().toString();
+						String direction = contents.getAllElementsByClass("ico_path").get(flag).getTextExtractor().toString();
+						movements.add(new WalkMovement(x, y, description, direction));
+					}
+				}
+				else if (method.equals("public"))
+				{
+					StringBuffer result = HttpRequest.request("http://m.map.daum.net/actions/publicDetailRoute?mode=list&sxEnc=" + startCoor[0] + "&syEnc=" + startCoor[1] +
+							"&exEnc=" + endCoor[0] + "&eyEnc=" + endCoor[1] + "&ranking=1", "GET");
+					Source source = new Source(result);
+					Element root = source.getFirstElementByClass("list_section list_detail");
+					List<Element> elements = root.getAllElements(HTMLElementName.LI);
+
+					for (Element i : elements)
+					{
+						String data_sx = i.getAttributeValue("data-sx");
+						String data_sy = i.getAttributeValue("data-sy");
+
+						if (data_sx == null || data_sx.equals(""))
+							data_sx = "0.0";
+						if (data_sy == null || data_sy.equals(""))
+							data_sy = "0.0";
+
+						double x = Double.parseDouble(data_sx);
+						double y = Double.parseDouble(data_sy);
+
+						Element descElement = i.getFirstElementByClass("txt_station");
+						Element busNameElement = i.getFirstElementByClass("numGREEN");
+						Element busIdElement = i.getFirstElementByClass("move_bus_detail");
+
+						String description = "";
+						if (descElement != null && descElement.getTextExtractor() != null)
+							description = descElement.getTextExtractor().toString();
+
+						// 버스에 대한 정보가 없으면
+						if (busNameElement == null || busIdElement == null)
+						{
+							movements.add(new WalkMovement(x, y, description, ""));
+						}
+
+						// 버스에 대한 정보가 있으면 버스 정보를 추가한다.
+						else
+						{
+							String busName = busNameElement.getTextExtractor().toString();
+							String busId = busIdElement.getAttributeValue("data-id");
+							movements.add(new BusMovement(x, y, description, busId, busName));
+						}
+					}
 				}
 
 				return movements;
@@ -80,44 +133,9 @@ public class PathRequester
 			protected void onPostExecute(ArrayList<Movement> result)
 			{
 				// 리스너로 결과를 전달한다.
-				if (listener != null)
+				if (listener != null && result != null)
 					listener.onPathReceived(result);
 			}
 		}.execute();
-	}
-
-	/**
-	 * 서버로 Get이나 Post 요청을 하는 메서드
-	 * @param urlString     요청 URL
-	 * @param requestMethod 요청 방식 "GET" or "POST"
-	 * @return 요청 결과
-	 */
-	private static StringBuffer httpRequest(String urlString, String requestMethod)
-	{
-		StringBuffer chaine = new StringBuffer("");
-		try
-		{
-			URL url = new URL(urlString);
-			HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-			connection.setRequestProperty("User-Agent", "");
-			connection.setRequestMethod(requestMethod);
-			connection.setDoInput(true);
-			connection.connect();
-
-			InputStream inputStream = connection.getInputStream();
-
-			BufferedReader rd = new BufferedReader(new InputStreamReader(inputStream));
-			String line = "";
-			while ((line = rd.readLine()) != null)
-			{
-				chaine.append(line);
-			}
-		}
-		catch (IOException e)
-		{
-			e.printStackTrace();
-		}
-
-		return chaine;
 	}
 }

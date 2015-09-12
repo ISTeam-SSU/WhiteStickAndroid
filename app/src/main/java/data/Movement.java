@@ -1,25 +1,21 @@
 package data;
 
-/** 이동경로를 나타내는 클래스 */
-public class Movement
+import android.view.LayoutInflater;
+import android.view.View;
+
+/**
+ * 중간 경로에 대한 정보
+ */
+public abstract class Movement
 {
 	private double x, y;        // 좌표
 	private String description; // 설명
-	private String direction;   // 방향
 
-	/**
-	 * 생성자
-	 * @param x
-	 * @param y
-	 * @param description
-	 * @param direction
-	 */
-	public Movement(double x, double y, String description, String direction)
+	public Movement(double x, double y, String description)
 	{
 		this.x = x;
 		this.y = y;
 		this.description = description;
-		this.direction = direction;
 	}
 
 	public double getX()
@@ -52,13 +48,10 @@ public class Movement
 		this.description = description;
 	}
 
-	public String getDirection()
-	{
-		return direction;
-	}
+	public abstract View toView(LayoutInflater inflater);
 
-	public void setDirection(String direction)
-	{
-		this.direction = direction;
-	}
+	public abstract void initView(View view);
+
+	@Override
+	public abstract String toString();
 }
