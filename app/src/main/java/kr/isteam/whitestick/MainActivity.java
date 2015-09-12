@@ -3,6 +3,11 @@ package kr.isteam.whitestick;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
+import android.widget.ListView;
+import android.widget.TextView;
 
 import net.htmlparser.jericho.Element;
 import net.htmlparser.jericho.HTMLElementName;
@@ -24,9 +29,11 @@ import data.Movement;
  */
 public class MainActivity extends AppCompatActivity
 {
+	private ListView listMovement;
+	private ArrayAdapter<Movement> adapter;
+
 	/**
 	 * 메인 액티비티가 생성될 때 호출되는 메서드
-	 *
 	 * @param savedInstanceState 저장된 인스턴스 상태
 	 */
 	@Override
@@ -34,6 +41,28 @@ public class MainActivity extends AppCompatActivity
 	{
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_main);
+
+		adapter = new ArrayAdapter<Movement>(this, R.layout.list_item_movement)
+		{
+			@Override
+			public View getView(int position, View convertView, ViewGroup parent)
+			{
+				if (convertView == null)
+					convertView = getLayoutInflater().inflate(R.layout.list_item_movement, null);
+				TextView txtCoordinate = (TextView) convertView.findViewById(R.id.txt_coordinate);
+				TextView txtDescription = (TextView) convertView.findViewById(R.id.txt_description);
+				TextView txtDirection = (TextView) convertView.findViewById(R.id.txt_direction);
+
+				Movement item = getItem(position);
+				txtCoordinate.setText(String.format("좌표 : x(%f), y(%f)", item.getX(), item.getY()));
+				txtDescription.setText("설명 : " + item.getDescription());
+				txtDirection.setText("방향 : " + item.getDirection());
+
+				return convertView;
+			}
+		};
+		listMovement = (ListView) findViewById(R.id.list_movements);
+		listMovement.setAdapter(adapter);
 
 		new AsyncTask<Void, Void, ArrayList<Movement>>()
 		{
@@ -66,8 +95,6 @@ public class MainActivity extends AppCompatActivity
 					String description = descElement.getTextExtractor().toString();
 					String direction = contents.getAllElementsByClass("ico_path").get(flag).getTextExtractor().toString();
 					movements.add(new Movement(x, y, description, direction));
-					int ij = 10;
-					ij = ij;
 				}
 
 				return movements;
@@ -76,11 +103,8 @@ public class MainActivity extends AppCompatActivity
 			@Override
 			protected void onPostExecute(ArrayList<Movement> result)
 			{
-				if (result != null)
-				{
-//					TextView tv = (TextView) findViewById(R.id.txt);
-//					tv.setText(result);
-				}
+				adapter.addAll(result);
+				adapter.notifyDataSetChanged();
 			}
 		}.execute();
 	}
